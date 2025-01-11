@@ -1,0 +1,33 @@
+name: Docker Fix Test
+on: [push]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+      - name: Build CLI
+        run: |
+          dotnet publish src/Azure.Functions.Cli/Azure.Functions.Cli.csproj --runtime linux-x64 --output /tmp/cli --framework net8.0
+          dotnet run --project build/Build.csproj
+          cp -r ../artifacts/linux-x64/templates /tmp/cli
+      - name: Setup test target project
+        run: |
+          /tmp/cli/func init TestTarget --worker-runtime dotnet-isolated --target-framework net8.0 --docker
+          cd TestTarget
+          /tmp/cli/func new --name HttpFunc1 --template "HTTP trigger" --authlevel "anonymous"
+          /tmp/cli/func new --name HttpFunc2 --template "HTTP trigger" --authlevel "anonymous"
+      - name: Test deploy command
+        run: |
+          cd TestTarget
+          docker build -t test-target .
+          sleep 10
+          /tmp/cli/func kubernetes deploy --image-name test-target:latest --name test --dry-run
